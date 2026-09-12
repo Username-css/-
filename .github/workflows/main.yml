@@ -13,7 +13,7 @@ jobs:
         run: |
           choco install anydesk -y
 
-      - name: Konfigurasi AnyDesk
+      - name: Konfigurasi Unattended Access Full
         shell: powershell
         run: |
           Set-Service -Name "AnyDesk" -StartupType Automatic -ErrorAction SilentlyContinue
@@ -24,7 +24,9 @@ jobs:
 
           $regPath = "HKLM:\SOFTWARE\Policies\AnyDesk"
           if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+          
           New-ItemProperty -Path $regPath -Name "UnattendedAccessAllowed" -Value 1 -PropertyType DWORD -Force | Out-Null
+          New-ItemProperty -Path $regPath -Name "InteractiveAccess" -Value 0 -PropertyType DWORD -Force | Out-Null
 
           Restart-Service -Name "AnyDesk" -Force
           Start-Sleep -Seconds 5
