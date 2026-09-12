@@ -13,19 +13,44 @@ jobs:
         run: |
           choco install anydesk -y
 
-      - name: Configure AnyDesk & Set Password
+      - name: Configure AnyDesk & Get ID
         shell: powershell
         run: |
-          # Set password untuk akses unattended (ganti 'P@ssword123' sesuai keinginan)
+          # 1. Pastikan Service AnyDesk berjalan & buat direktori programdata
+          Set-Service -Name "AnyDesk" -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
+          
+          # 2. Set password unattended access
           $password = "P@ssword123"
           echo $password | & "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
           
-          # Tunggu service AnyDesk siap
-          Start-Sleep -Seconds 5
+          # 3. Tunggu service meregistrasikan ID
+          Start-Sleep -Seconds 10
           
-          # Ambil AnyDesk ID
-          $anydeskId = & "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --get-id
-          
+          # 4. Ambil ID via CMD/PowerShell stdout redirect atau membaca service.conf
+          $anydeskId = ""
+          for ($i = 0; $i -lt 15; $i++) {
+            # Metode A: Tangkap ID via CMD wrapper (karena CLI anydesk tidak output langsung ke PowerShell)
+            $idOutput = cmd /c '"C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --get-id' 2>&1
+            if ($idOutput -match '\d{9,10}') {
+              $anydeskId = $matches[0]
+              break
+            }
+            
+            # Metode B: Baca langsung dari service.conf jika Metode A belum dapat
+            $confPath = "$env:ProgramData\AnyDesk\service.conf"
+            if (Test-Path $confPath) {
+              $confContent = Get-Content $confPath -Raw -ErrorAction SilentlyContinue
+              if ($confContent -match 'ad\.anynet\.id=(\d+)') {
+                $anydeskId = $matches[1]
+                break
+              }
+            }
+            
+            Start-Sleep -Seconds 2
+          }
+
+          # Output ke log GitHub Actions
           Write-Host "=========================================================="
           Write-Host "ANYDESK ID       : $anydeskId"
           Write-Host "ANYDESK PASSWORD : $password"
@@ -34,6 +59,5 @@ jobs:
       - name: Keep Alive
         shell: powershell
         run: |
-          # Menjaga VM tetap berjalan hingga 6 jam
           Start-Sleep -Seconds 21600
           
