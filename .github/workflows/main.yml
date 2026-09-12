@@ -1,4 +1,4 @@
-name: Win
+name: Windows RDP Pinggy
 
 on: workflow_dispatch
 
@@ -20,27 +20,24 @@ jobs:
 
           $token = "${{ secrets.PINGGY_TOKEN }}"
           
-          # Jalankan SSH Pinggy dengan piping echo untuk melewati prompt interaktif
-          Start-Process cmd.exe -ArgumentList "/c echo. | ssh -t -t -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:3389 ${token}@free.pinggy.io > pinggy.log 2>&1" -NoNewWindow
-          
-          Start-Sleep -Seconds 12
+          # Jalankan SSH Pinggy di background job tanpa alokasi TTY (-t)
+          Start-Job -ScriptBlock {
+            param($t)
+            ssh -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:3389 "${t}@free.pinggy.io" > pinggy.log 2>&1
+          } -ArgumentList $token
 
           $rdpUrl = ""
-          for ($i = 0; $i -lt 20; $i++) {
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
             if (Test-Path "pinggy.log") {
               $rawContent = Get-Content "pinggy.log" -Raw -ErrorAction SilentlyContinue
               
-              # Tangkap format URL Pinggy (misal: r.pinggy.link:12345 atau free.pinggy.io:12345)
-              if ($rawContent -match '([a-zA-Z0-9\.-]+\.pinggy\.[a-zA-Z]+:\d+)') {
-                $rdpUrl = $matches[1]
-                break
-              }
-              if ($rawContent -match 'tcp://([a-zA-Z0-9\.-]+:\d+)') {
+              # Regex diperluas untuk menangkap format URL TCP Pinggy
+              if ($rawContent -match '([a-zA-Z0-9\.-]+\.(?:pinggy\.link|pinggy\.io):\d+)') {
                 $rdpUrl = $matches[1]
                 break
               }
             }
-            Start-Sleep -Seconds 2
           }
 
           Write-Host "=========================================================="
@@ -58,4 +55,3 @@ jobs:
         shell: powershell
         run: |
           Start-Sleep -Seconds 21600
-          
