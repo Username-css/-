@@ -9,48 +9,34 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install AnyDesk
+      - name: Install RustDesk
         run: |
-          choco install anydesk -y
+          choco install rustdesk -y
 
-      - name: Konfigurasi Unattended Access Full
+      - name: Konfigurasi RustDesk
         shell: powershell
         run: |
-          Set-Service -Name "AnyDesk" -StartupType Automatic -ErrorAction SilentlyContinue
-          Start-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
+          Set-Service -Name "rustdesk" -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service -Name "rustdesk" -ErrorAction SilentlyContinue
 
-          $password = "P@ssword123"
-          echo $password | & "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-
-          $regPath = "HKLM:\SOFTWARE\Policies\AnyDesk"
-          if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+          $password = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 10 | ForEach-Object {[char]$_})
           
-          New-ItemProperty -Path $regPath -Name "UnattendedAccessAllowed" -Value 1 -PropertyType DWORD -Force | Out-Null
-          New-ItemProperty -Path $regPath -Name "InteractiveAccess" -Value 0 -PropertyType DWORD -Force | Out-Null
-
-          Restart-Service -Name "AnyDesk" -Force
+          & "C:\Program Files\RustDesk\rustdesk.exe" --password $password
+          
           Start-Sleep -Seconds 5
 
-          $anydeskId = ""
+          $rustdeskId = ""
           for ($i = 0; $i -lt 15; $i++) {
-            $idOutput = cmd /c '"C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --get-id' 2>&1
+            $idOutput = cmd /c '"C:\Program Files\RustDesk\rustdesk.exe" --get-id' 2>&1
             if ($idOutput -match '\d{9,10}') {
-              $anydeskId = $matches[0]
+              $rustdeskId = $matches[0]
               break
-            }
-            $confPath = "$env:ProgramData\AnyDesk\service.conf"
-            if (Test-Path $confPath) {
-              $confContent = Get-Content $confPath -Raw -ErrorAction SilentlyContinue
-              if ($confContent -match 'ad\.anynet\.id=(\d+)') {
-                $anydeskId = $matches[1]
-                break
-              }
             }
             Start-Sleep -Seconds 2
           }
 
           Write-Host "=========================================================="
-          Write-Host "ID ANYDESK       : $anydeskId"
+          Write-Host "ID RUSTDESK      : $rustdeskId"
           Write-Host "KATA SANDI       : $password"
           Write-Host "=========================================================="
 
