@@ -18,22 +18,31 @@ jobs:
           $password = "P@ssword123"
           net user runneradmin $password
 
+          # 1. Download Pinggy CLI versi Windows
+          Invoke-WebRequest -Uri "https://pinggy.io/cli/pinggy_windows_amd64.exe" -OutFile "pinggy.exe"
+
           $token = "${{ secrets.PINGGY_TOKEN }}"
           
-          # Jalankan SSH Pinggy di background job tanpa alokasi TTY (-t)
-          Start-Job -ScriptBlock {
-            param($t)
-            ssh -p 443 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R0:localhost:3389 "${t}@free.pinggy.io" > pinggy.log 2>&1
-          } -ArgumentList $token
+          # 2. Jalankan Pinggy CLI di background
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = ".\pinggy.exe"
+          $psi.Arguments = "tcp --target localhost:3389 --token $token"
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.UseShellExecute = $false
+          $psi.CreateNoWindow = $true
+
+          $process = [System.Diagnostics.Process]::Start($psi)
 
           $rdpUrl = ""
-          for ($i = 0; $i -lt 30; $i++) {
+          # 3. Baca output stream secara real-time
+          for ($i = 0; $i -lt 20; $i++) {
             Start-Sleep -Seconds 2
-            if (Test-Path "pinggy.log") {
-              $rawContent = Get-Content "pinggy.log" -Raw -ErrorAction SilentlyContinue
-              
-              # Regex diperluas untuk menangkap format URL TCP Pinggy
-              if ($rawContent -match '([a-zA-Z0-9\.-]+\.(?:pinggy\.link|pinggy\.io):\d+)') {
+            
+            # Cek output stdout
+            if (-not $process.StandardOutput.EndOfStream) {
+              $line = $process.StandardOutput.ReadLine()
+              if ($line -match '([a-zA-Z0-9\.-]+\.(?:pinggy\.link|pinggy\.io|pinggy\.online):\d+)') {
                 $rdpUrl = $matches[1]
                 break
               }
@@ -47,11 +56,15 @@ jobs:
           Write-Host "=========================================================="
 
           if (-not $rdpUrl) {
-            Write-Host "--- LOG DEBUG PINGGY ---"
-            Get-Content "pinggy.log" -ErrorAction SilentlyContinue
+            Write-Host "--- LOG DEBUG (Membaca sisa output) ---"
+            $output = $process.StandardOutput.ReadToEnd()
+            $errorOutput = $process.StandardError.ReadToEnd()
+            Write-Host "STDOUT: $output"
+            Write-Host "STDERR: $errorOutput"
           }
 
       - name: Jaga Sesi
         shell: powershell
         run: |
           Start-Sleep -Seconds 21600
+          
