@@ -1,4 +1,4 @@
-name: Windows AnyDesk
+name: Win
 
 on: workflow_dispatch
 
@@ -13,31 +13,29 @@ jobs:
         run: |
           choco install anydesk -y
 
-      - name: Configure AnyDesk & Get ID
+      - name: Konfigurasi AnyDesk
         shell: powershell
         run: |
-          # 1. Pastikan Service AnyDesk berjalan & buat direktori programdata
           Set-Service -Name "AnyDesk" -StartupType Automatic -ErrorAction SilentlyContinue
           Start-Service -Name "AnyDesk" -ErrorAction SilentlyContinue
-          
-          # 2. Set password unattended access
+
           $password = "P@ssword123"
           echo $password | & "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-          
-          # 3. Tunggu service meregistrasikan ID
-          Start-Sleep -Seconds 10
-          
-          # 4. Ambil ID via CMD/PowerShell stdout redirect atau membaca service.conf
+
+          $regPath = "HKLM:\SOFTWARE\Policies\AnyDesk"
+          if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+          New-ItemProperty -Path $regPath -Name "UnattendedAccessAllowed" -Value 1 -PropertyType DWORD -Force | Out-Null
+
+          Restart-Service -Name "AnyDesk" -Force
+          Start-Sleep -Seconds 5
+
           $anydeskId = ""
           for ($i = 0; $i -lt 15; $i++) {
-            # Metode A: Tangkap ID via CMD wrapper (karena CLI anydesk tidak output langsung ke PowerShell)
             $idOutput = cmd /c '"C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --get-id' 2>&1
             if ($idOutput -match '\d{9,10}') {
               $anydeskId = $matches[0]
               break
             }
-            
-            # Metode B: Baca langsung dari service.conf jika Metode A belum dapat
             $confPath = "$env:ProgramData\AnyDesk\service.conf"
             if (Test-Path $confPath) {
               $confContent = Get-Content $confPath -Raw -ErrorAction SilentlyContinue
@@ -46,17 +44,15 @@ jobs:
                 break
               }
             }
-            
             Start-Sleep -Seconds 2
           }
 
-          # Output ke log GitHub Actions
           Write-Host "=========================================================="
-          Write-Host "ANYDESK ID       : $anydeskId"
-          Write-Host "ANYDESK PASSWORD : $password"
+          Write-Host "ID ANYDESK       : $anydeskId"
+          Write-Host "KATA SANDI       : $password"
           Write-Host "=========================================================="
 
-      - name: Keep Alive
+      - name: Jaga Sesi
         shell: powershell
         run: |
           Start-Sleep -Seconds 21600
