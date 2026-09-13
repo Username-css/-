@@ -1,69 +1,48 @@
-name: Windows RDP Pinggy
+name: Windows CRD
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      raw_command:
+        description: 'Paste full command from Google here'
+        required: true
+        type: string
+      pin:
+        description: 'Remote PIN (min 6 digits)'
+        required: false
+        default: '123456'
+        type: string
 
 jobs:
-  windows-gui:
+  crd:
     runs-on: windows-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Konfigurasi RDP & Jalankan Pinggy
+      - name: Install and Register CRD
         shell: powershell
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          $downloader = New-Object System.Net.WebClient
+          $downloader.DownloadFile('https://dl.google.com/remotedesktop/chromeremotedesktophost.msi', 'crd.msi')
+          Start-Process msiexec.exe -ArgumentList '/i crd.msi /qn' -Wait
+          Remove-Item crd.msi
 
-          $password = "P@ssword123"
-          net user runneradmin $password
-
-          # 1. Download Pinggy CLI versi Windows
-          Invoke-WebRequest -Uri "https://pinggy.io/cli/pinggy_windows_amd64.exe" -OutFile "pinggy.exe"
-
-          $token = "${{ secrets.PINGGY_TOKEN }}"
-          
-          # 2. Jalankan Pinggy CLI di background
-          $psi = New-Object System.Diagnostics.ProcessStartInfo
-          $psi.FileName = ".\pinggy.exe"
-          $psi.Arguments = "tcp --target localhost:3389 --token $token"
-          $psi.RedirectStandardOutput = $true
-          $psi.RedirectStandardError = $true
-          $psi.UseShellExecute = $false
-          $psi.CreateNoWindow = $true
-
-          $process = [System.Diagnostics.Process]::Start($psi)
-
-          $rdpUrl = ""
-          # 3. Baca output stream secara real-time
-          for ($i = 0; $i -lt 20; $i++) {
-            Start-Sleep -Seconds 2
-            
-            # Cek output stdout
-            if (-not $process.StandardOutput.EndOfStream) {
-              $line = $process.StandardOutput.ReadLine()
-              if ($line -match '([a-zA-Z0-9\.-]+\.(?:pinggy\.link|pinggy\.io|pinggy\.online):\d+)') {
-                $rdpUrl = $matches[1]
-                break
-              }
-            }
+          $crdExe = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remotedesktop_host.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $crdExe) {
+            $crdExe = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -First 1 -ExpandProperty FullName
           }
 
-          Write-Host "=========================================================="
-          Write-Host "ALAMAT RDP   : $rdpUrl"
-          Write-Host "USERNAME     : runneradmin"
-          Write-Host "KATA SANDI   : $password"
-          Write-Host "=========================================================="
-
-          if (-not $rdpUrl) {
-            Write-Host "--- LOG DEBUG (Membaca sisa output) ---"
-            $output = $process.StandardOutput.ReadToEnd()
-            $errorOutput = $process.StandardError.ReadToEnd()
-            Write-Host "STDOUT: $output"
-            Write-Host "STDERR: $errorOutput"
+          $raw = '${{ inputs.raw_command }}'
+          $code = ""
+          if ($raw -match '--(?:code|authorizing-code)=["'']?([^"'']\S+)["'']?') {
+            $code = $matches[1]
+          } else {
+            $code = $raw.Trim()
           }
 
-      - name: Jaga Sesi
+          $pin = "${{ inputs.pin }}"
+
+          & $crdExe --inject-user-build --authorizing-code="$code" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$pin"
+
+      - name: Keep Alive
         shell: powershell
         run: |
           Start-Sleep -Seconds 21600
