@@ -20,17 +20,18 @@ jobs:
       - name: Install and Register CRD
         shell: powershell
         run: |
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           $url = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
-          try {
-            Invoke-WebRequest -Uri $url -OutFile "crd.msi" -UseBasicParsing
-          } catch {
-            choco install chrome-remote-desktop -y
-          }
+          
+          Write-Host "Downloading Chrome Remote Desktop..."
+          curl.exe -sL $url -o crd.msi
 
           if (Test-Path "crd.msi") {
+            Write-Host "Installing CRD via MSI..."
             Start-Process msiexec.exe -ArgumentList '/i crd.msi /qn' -Wait
             Remove-Item crd.msi
+          } else {
+            Write-Host "Fallback to Chocolatey..."
+            choco install chrome-remote-desktop -y
           }
 
           $crdExe = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remotedesktop_host.exe" | Select-Object -First 1 -ExpandProperty FullName
@@ -48,6 +49,7 @@ jobs:
 
           $pin = "${{ inputs.pin }}"
 
+          Write-Host "Registering Host to Google..."
           & $crdExe --inject-user-build --authorizing-code="$code" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$pin"
 
       - name: Keep Alive
