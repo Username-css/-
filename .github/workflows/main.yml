@@ -3,12 +3,12 @@ name: Win
 on:
   workflow_dispatch:
     inputs:
-      raw_command:
-        description: 'Paste full command from Google here'
+      auth_code:
+        description: 'Kode OAuth dari Google (hanya teks 4/0A...)'
         required: true
         type: string
       pin:
-        description: 'Remote PIN (min 6 digits)'
+        description: 'PIN Remote (minimal 6 angka)'
         required: false
         default: '123456'
         type: string
@@ -17,40 +17,32 @@ jobs:
   crd:
     runs-on: windows-latest
     steps:
-      - name: Install and Register CRD
+      - name: Enable Remote Desktop & Display
         shell: powershell
         run: |
-          $url = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
-          
-          Write-Host "Downloading Chrome Remote Desktop..."
-          curl.exe -sL $url -o crd.msi
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name "TermService" -StartupType Automatic
+          Start-Service -Name "TermService" -ErrorAction SilentlyContinue
 
-          if (Test-Path "crd.msi") {
-            Write-Host "Installing CRD via MSI..."
-            Start-Process msiexec.exe -ArgumentList '/i crd.msi /qn' -Wait
-            Remove-Item crd.msi
-          } else {
-            Write-Host "Fallback to Chocolatey..."
-            choco install chrome-remote-desktop -y
-          }
+      - name: Install Chrome Remote Desktop
+        shell: powershell
+        run: |
+          curl.exe -sL "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -o crd.msi
+          Start-Process msiexec.exe -ArgumentList '/i crd.msi /qn' -Wait
+          Remove-Item crd.msi
 
-          $crdExe = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remotedesktop_host.exe" | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $crdExe) {
-            $crdExe = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -First 1 -ExpandProperty FullName
-          }
+      - name: Register CRD Host
+        shell: powershell
+        run: |
+          $crdDir = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $crdExe = Join-Path $crdDir.FullName "remoting_start_host.exe"
 
-          $raw = '${{ inputs.raw_command }}'
-          $code = ""
-          if ($raw -match '--(?:code|authorizing-code)=["'']?([^"'']\S+)["'']?') {
-            $code = $matches[1]
-          } else {
-            $code = $raw.Trim()
-          }
+          $code = "${{ inputs.auth_code }}".Trim()
+          $pin = "${{ inputs.pin }}".Trim()
 
-          $pin = "${{ inputs.pin }}"
-
-          Write-Host "Registering Host to Google..."
-          & $crdExe --inject-user-build --authorizing-code="$code" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$pin"
+          Write-Host "Registering using: $crdExe"
+          & "$crdExe" --code="$code" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$pin" --suppress-dialogs-for-testing
 
       - name: Keep Alive
         shell: powershell
