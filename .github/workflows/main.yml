@@ -1,4 +1,4 @@
-name: Windows CRD
+name: Win
 
 on:
   workflow_dispatch:
@@ -20,10 +20,18 @@ jobs:
       - name: Install and Register CRD
         shell: powershell
         run: |
-          $downloader = New-Object System.Net.WebClient
-          $downloader.DownloadFile('https://dl.google.com/remotedesktop/chromeremotedesktophost.msi', 'crd.msi')
-          Start-Process msiexec.exe -ArgumentList '/i crd.msi /qn' -Wait
-          Remove-Item crd.msi
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $url = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+          try {
+            Invoke-WebRequest -Uri $url -OutFile "crd.msi" -UseBasicParsing
+          } catch {
+            choco install chrome-remote-desktop -y
+          }
+
+          if (Test-Path "crd.msi") {
+            Start-Process msiexec.exe -ArgumentList '/i crd.msi /qn' -Wait
+            Remove-Item crd.msi
+          }
 
           $crdExe = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remotedesktop_host.exe" | Select-Object -First 1 -ExpandProperty FullName
           if (-not $crdExe) {
